@@ -87,6 +87,18 @@ jobs:
 
           rustc --print target-libdir --target aarch64-unknown-linux-musl
 
+          # Hard fail if the target compiler/linker ever resolves to host x86_64.
+          probe_dir="$(mktemp -d)"
+          trap 'rm -rf "$probe_dir"' EXIT
+          printf 'int main(void){return 0;}\n' > "$probe_dir/probe.c"
+          "$CC_AARCH64_UNKNOWN_LINUX_MUSL" "$probe_dir/probe.c" -o "$probe_dir/probe"
+          file "$probe_dir/probe" | tee "$probe_dir/probe.file"
+          grep -Eq 'ARM aarch64|AArch64' "$probe_dir/probe.file"
+          ! grep -Eq 'x86-64|x86_64' "$probe_dir/probe.file"
+          readelf -l "$probe_dir/probe" | grep -F '/lib/ld-musl-aarch64.so.1' >/dev/null
+          "$CXX_AARCH64_UNKNOWN_LINUX_MUSL" --version
+          echo "ARM64 musl compiler/linker probe: PASS"
+
       - name: Configure Rusty V8 artifact
         uses: ./.github/actions/setup-rusty-v8
         with:
