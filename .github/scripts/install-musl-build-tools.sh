@@ -311,9 +311,11 @@ fi
 
 cflags="-pthread"
 cxxflags="-pthread"
+target_cflags="-pthread"
+target_cxxflags="-pthread"
 if [[ "${TARGET}" == "aarch64-unknown-linux-musl" ]]; then
-  cflags="${cflags} -Wno-error=frame-larger-than"
-  cxxflags="${cxxflags} -Wno-error=frame-larger-than"
+  target_cflags="${target_cflags} -Wno-error=frame-larger-than"
+  target_cxxflags="${target_cxxflags} -Wno-error=frame-larger-than"
 fi
 
 echo "CFLAGS=${cflags}" >> "$GITHUB_ENV"
@@ -322,6 +324,15 @@ echo "CXXFLAGS=${cxxflags}" >> "$GITHUB_ENV"
 # Host compilers: used for host build scripts/generators.
 echo "CC=gcc" >> "$GITHUB_ENV"
 echo "CXX=g++" >> "$GITHUB_ENV"
+
+# aws-lc-sys has explicit target compiler/flag variables. Keep host builds on
+# native gcc/g++, while AWS-LC target objects use the AArch64 musl compiler.
+echo "AWS_LC_SYS_CC=gcc" >> "$GITHUB_ENV"
+echo "AWS_LC_SYS_CXX=g++" >> "$GITHUB_ENV"
+echo "AWS_LC_SYS_TARGET_CC=${cc}" >> "$GITHUB_ENV"
+echo "AWS_LC_SYS_TARGET_CXX=${cxx}" >> "$GITHUB_ENV"
+echo "AWS_LC_SYS_TARGET_CFLAGS=${target_cflags}" >> "$GITHUB_ENV"
+echo "AWS_LC_SYS_TARGET_CXXFLAGS=${target_cxxflags}" >> "$GITHUB_ENV"
 
 # Target compilers: used only for the target triple.
 target_cc_var="CC_${TARGET^^}"
