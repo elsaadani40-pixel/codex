@@ -351,8 +351,16 @@ echo "${target_cflags_var}=${target_cflags}" >> "$GITHUB_ENV"
 target_cxxflags_var="CXXFLAGS_${TARGET//-/_}"
 echo "${target_cxxflags_var}=${target_cxxflags}" >> "$GITHUB_ENV"
 
-# Preserve the uppercase aliases too for tools that normalize Cargo target
-# triples in environment variable names.
+# Preserve uppercase aliases for the workflow verification and tools that
+# normalize Cargo target triples in environment variable names.
+uppercase_target_cc_var="CC_${TARGET^^}"
+uppercase_target_cc_var="${uppercase_target_cc_var//-/_}"
+echo "${uppercase_target_cc_var}=${cc}" >> "$GITHUB_ENV"
+
+uppercase_target_cxx_var="CXX_${TARGET^^}"
+uppercase_target_cxx_var="${uppercase_target_cxx_var//-/_}"
+echo "${uppercase_target_cxx_var}=${cxx}" >> "$GITHUB_ENV"
+
 
 cargo_linker_var="CARGO_TARGET_${TARGET^^}_LINKER"
 cargo_linker_var="${cargo_linker_var//-/_}"
