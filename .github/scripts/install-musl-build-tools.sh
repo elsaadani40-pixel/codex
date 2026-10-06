@@ -17,7 +17,7 @@ if [[ -n "${APT_INSTALL_ARGS:-}" ]]; then
 fi
 
 sudo apt-get update "${apt_update_args[@]}"
-sudo apt-get install -y "${apt_install_args[@]}" ca-certificates curl musl-tools pkg-config libcap-dev g++ clang libc++-dev libc++abi-dev lld xz-utils
+sudo apt-get install -y "${apt_install_args[@]}" ca-certificates curl musl-tools pkg-config g++ clang libc++-dev libc++abi-dev lld xz-utils
 
 case "${TARGET}" in
   x86_64-unknown-linux-musl)
@@ -37,19 +37,43 @@ libcap_sha256="de4e7e064c9ba451d5234dd46e897d7c71c96a9ebf9a0c445bc04f4742d83632"
 libcap_tarball_name="libcap-${libcap_version}.tar.xz"
 libcap_download_url="https://mirrors.edge.kernel.org/pub/linux/libs/security/linux-privs/libcap2/${libcap_tarball_name}"
 
-# Use the musl toolchain as the Rust linker to avoid Zig injecting its own CRT.
-if command -v "${arch}-linux-musl-gcc" >/dev/null; then
-  musl_linker="$(command -v "${arch}-linux-musl-gcc")"
-elif command -v musl-gcc >/dev/null; then
-  musl_linker="$(command -v musl-gcc)"
-else
-  echo "musl gcc not found after install; arch=${arch}" >&2
-  exit 1
-fi
-
+# Ubuntu's musl-tools package provides only a native x86_64 musl-gcc.
+# For AArch64 we MUST use a real cross compiler; never fall back to host musl-gcc.
 zig_target="${TARGET/-unknown-linux-musl/-linux-musl}"
 runner_temp="${RUNNER_TEMP:-/tmp}"
 tool_root="${runner_temp}/codex-musl-tools-${TARGET}"
+
+if [[ "${TARGET}" == "aarch64-unknown-linux-musl" ]]; then
+  command -v zig >/dev/null || {
+    echo "Zig is required for AArch64 musl cross-compilation" >&2
+    exit 1
+  }
+  zig_bin="$(command -v zig)"
+  musl_linker="${zig_bin} cc -target ${zig_target}"
+
+  probe_dir="${tool_root}/toolchain-probe"
+  mkdir -p "${probe_dir}"
+  printf 'int main(void){return 0;}\n' > "${probe_dir}/probe.c"
+  "${zig_bin}" cc -target "${zig_target}" "${probe_dir}/probe.c" -o "${probe_dir}/probe"
+  file "${probe_dir}/probe" | tee "${probe_dir}/probe.file"
+  grep -Eq 'ARM aarch64|AArch64' "${probe_dir}/probe.file" || {
+    echo "AArch64 toolchain probe failed: target binary is not ARM64" >&2
+    exit 1
+  }
+  readelf -l "${probe_dir}/probe" | grep -F '/lib/ld-musl-aarch64.so.1' >/dev/null || {
+    echo "AArch64 toolchain probe failed: musl loader is not aarch64" >&2
+    exit 1
+  }
+else
+  if command -v "${arch}-linux-musl-gcc" >/dev/null; then
+    musl_linker="$(command -v "${arch}-linux-musl-gcc")"
+  elif command -v musl-gcc >/dev/null; then
+    musl_linker="$(command -v musl-gcc)"
+  else
+    echo "musl gcc not found after install; arch=${arch}" >&2
+    exit 1
+  fi
+fi
 mkdir -p "${tool_root}"
 
 libcap_root="${tool_root}/libcap-${libcap_version}"
