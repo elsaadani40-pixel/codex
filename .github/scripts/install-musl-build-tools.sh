@@ -60,8 +60,11 @@ if [[ "${TARGET}" == "aarch64-unknown-linux-musl" ]]; then
     echo "AArch64 toolchain probe failed: target binary is not ARM64" >&2
     exit 1
   }
-  readelf -l "${probe_dir}/probe" | grep -F '/lib/ld-musl-aarch64.so.1' >/dev/null || {
-    echo "AArch64 toolchain probe failed: musl loader is not aarch64" >&2
+  # Zig defaults to a statically linked musl executable here, so there is
+  # intentionally no PT_INTERP entry to inspect. The ELF machine type above
+  # is the authoritative architecture check for this compiler probe.
+  readelf -h "${probe_dir}/probe" | grep -Eq 'Machine:.*AArch64' || {
+    echo "AArch64 toolchain probe failed: ELF machine is not AArch64" >&2
     exit 1
   }
 else
