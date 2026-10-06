@@ -15,11 +15,20 @@ jobs:
         with:
           ref: flatten-mcp-tools-for-non-namespace-providers
 
-      - name: Install Rust target
-        run: rustup target add aarch64-unknown-linux-musl
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-musl
 
       - name: Install musl linker
         run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Verify Rust target
+        run: |
+          rustc --version
+          cargo --version
+          rustup target list --installed
+          rustc --print target-libdir --target aarch64-unknown-linux-musl
 
       - name: Build Codex CLI
         working-directory: codex-rs
