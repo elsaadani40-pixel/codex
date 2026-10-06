@@ -17,7 +17,7 @@ if [[ -n "${APT_INSTALL_ARGS:-}" ]]; then
 fi
 
 sudo apt-get update "${apt_update_args[@]}"
-sudo apt-get install -y "${apt_install_args[@]}"   ca-certificates curl make perl binutils musl-tools pkg-config   g++ clang libc++-dev libc++abi-dev lld xz-utils
+sudo apt-get install -y "${apt_install_args[@]}"   ca-certificates curl make perl binutils musl-tools pkg-config   g++ clang libc++-dev libc++abi-dev lld xz-utils cmake ninja-build
 
 case "${TARGET}" in
   x86_64-unknown-linux-musl)
@@ -320,6 +320,10 @@ fi
 
 echo "CFLAGS=${cflags}" >> "$GITHUB_ENV"
 echo "CXXFLAGS=${cxxflags}" >> "$GITHUB_ENV"
+
+# Build AWS-LC through its CMake path so cross-target assembly is configured
+# consistently by CMake instead of the cc-rs path.
+echo "AWS_LC_SYS_CMAKE_BUILDER=1" >> "$GITHUB_ENV"
 
 # Host compilers: used for host build scripts/generators.
 echo "CC=gcc" >> "$GITHUB_ENV"
