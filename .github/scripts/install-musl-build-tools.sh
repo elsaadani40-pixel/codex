@@ -93,8 +93,12 @@ if [[ ! -f "${libcap_prefix}/lib/libcap.a" ]]; then
 
   tar -xJf "${libcap_tarball}" -C "${libcap_src_root}"
   libcap_source_dir="${libcap_src_root}/libcap-${libcap_version}"
+  # libcap has a small build-time generator (_makenames) that must run
+  # on the CI host. Keep the library objects ARM64/musl, but compile that
+  # generator with the native host compiler so it can execute on x86_64.
   make -C "${libcap_source_dir}/libcap" -j"$(nproc)" \
     CC="${musl_linker}" \
+    BUILD_CC=gcc \
     AR=ar \
     RANLIB=ranlib
 
