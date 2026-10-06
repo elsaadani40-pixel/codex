@@ -17,7 +17,7 @@ if [[ -n "${APT_INSTALL_ARGS:-}" ]]; then
 fi
 
 sudo apt-get update "${apt_update_args[@]}"
-sudo apt-get install -y "${apt_install_args[@]}" ca-certificates curl musl-tools pkg-config libcap-dev g++ clang libc++-dev libc++abi-dev lld xz-utils
+sudo apt-get install -y "${apt_install_args[@]}" ca-certificates curl musl-tools pkg-config g++ clang libc++-dev libc++abi-dev lld xz-utils
 
 case "${TARGET}" in
   x86_64-unknown-linux-musl)
@@ -37,19 +37,46 @@ libcap_sha256="de4e7e064c9ba451d5234dd46e897d7c71c96a9ebf9a0c445bc04f4742d83632"
 libcap_tarball_name="libcap-${libcap_version}.tar.xz"
 libcap_download_url="https://mirrors.edge.kernel.org/pub/linux/libs/security/linux-privs/libcap2/${libcap_tarball_name}"
 
-# Use the musl toolchain as the Rust linker to avoid Zig injecting its own CRT.
-if command -v "${arch}-linux-musl-gcc" >/dev/null; then
-  musl_linker="$(command -v "${arch}-linux-musl-gcc")"
-elif command -v musl-gcc >/dev/null; then
-  musl_linker="$(command -v musl-gcc)"
-else
-  echo "musl gcc not found after install; arch=${arch}" >&2
-  exit 1
-fi
-
+# Ubuntu's musl-tools package provides only a native x86_64 musl-gcc.
+# For AArch64 we MUST use a real cross compiler; never fall back to host musl-gcc.
 zig_target="${TARGET/-unknown-linux-musl/-linux-musl}"
 runner_temp="${RUNNER_TEMP:-/tmp}"
 tool_root="${runner_temp}/codex-musl-tools-${TARGET}"
+
+if [[ "${TARGET}" == "aarch64-unknown-linux-musl" ]]; then
+  command -v zig >/dev/null || {
+    echo "Zig is required for AArch64 musl cross-compilation" >&2
+    exit 1
+  }
+  zig_bin="$(command -v zig)"
+  musl_linker="${zig_bin} cc -target ${zig_target}"
+
+  probe_dir="${tool_root}/toolchain-probe"
+  mkdir -p "${probe_dir}"
+  printf 'int main(void){return 0;}\n' > "${probe_dir}/probe.c"
+  "${zig_bin}" cc -target "${zig_target}" "${probe_dir}/probe.c" -o "${probe_dir}/probe"
+  file "${probe_dir}/probe" | tee "${probe_dir}/probe.file"
+  grep -Eq 'ARM aarch64|AArch64' "${probe_dir}/probe.file" || {
+    echo "AArch64 toolchain probe failed: target binary is not ARM64" >&2
+    exit 1
+  }
+  # Zig defaults to a statically linked musl executable here, so there is
+  # intentionally no PT_INTERP entry to inspect. The ELF machine type above
+  # is the authoritative architecture check for this compiler probe.
+  readelf -h "${probe_dir}/probe" | grep -Eq 'Machine:.*AArch64' || {
+    echo "AArch64 toolchain probe failed: ELF machine is not AArch64" >&2
+    exit 1
+  }
+else
+  if command -v "${arch}-linux-musl-gcc" >/dev/null; then
+    musl_linker="$(command -v "${arch}-linux-musl-gcc")"
+  elif command -v musl-gcc >/dev/null; then
+    musl_linker="$(command -v musl-gcc)"
+  else
+    echo "musl gcc not found after install; arch=${arch}" >&2
+    exit 1
+  fi
+fi
 mkdir -p "${tool_root}"
 
 libcap_root="${tool_root}/libcap-${libcap_version}"
@@ -59,8 +86,8 @@ libcap_pkgconfig_dir="${libcap_prefix}/lib/pkgconfig"
 
 if [[ ! -f "${libcap_prefix}/lib/libcap.a" ]]; then
   mkdir -p "${libcap_src_root}" "${libcap_prefix}/lib" "${libcap_prefix}/include/sys" "${libcap_prefix}/include/linux" "${libcap_pkgconfig_dir}"
-  libcap_tarball="${libcap_root}/${libcap_tarball_name}"
 
+  libcap_tarball="${libcap_root}/${libcap_tarball_name}"
   curl -fsSL "${libcap_download_url}" -o "${libcap_tarball}"
   echo "${libcap_sha256}  ${libcap_tarball}" | sha256sum -c -
 
@@ -102,31 +129,28 @@ set -euo pipefail
 args=()
 skip_next=0
 pending_include=0
-for arg in "\$@"; do
-  if [[ "\${pending_include}" -eq 1 ]]; then
+for arg in "$@"; do
+  if [[ "${pending_include}" -eq 1 ]]; then
     pending_include=0
-    if [[ "\${arg}" == /usr/include || "\${arg}" == /usr/include/* ]]; then
-      # Keep host-only headers available, but after the target sysroot headers.
-      args+=("-idirafter" "\${arg}")
+    if [[ "${arg}" == /usr/include || "${arg}" == /usr/include/* ]]; then
+      args+=("-idirafter" "${arg}")
     else
-      args+=("-I" "\${arg}")
+      args+=("-I" "${arg}")
     fi
     continue
   fi
 
-  if [[ "\${skip_next}" -eq 1 ]]; then
+  if [[ "${skip_next}" -eq 1 ]]; then
     skip_next=0
     continue
   fi
-  case "\${arg}" in
+  case "${arg}" in
     --target)
       skip_next=1
       continue
       ;;
     --target=*|-target=*|-target)
-      # Drop any explicit --target/-target flags. Zig expects -target and
-      # rejects Rust triples like *-unknown-linux-musl.
-      if [[ "\${arg}" == "-target" ]]; then
+      if [[ "${arg}" == "-target" ]]; then
         skip_next=1
       fi
       continue
@@ -136,24 +160,20 @@ for arg in "\$@"; do
       continue
       ;;
     -I/usr/include|-I/usr/include/*)
-      # Avoid making glibc headers win over musl headers.
-      args+=("-idirafter" "\${arg#-I}")
+      args+=("-idirafter" "${arg#-I}")
       continue
       ;;
     -Wp,-U_FORTIFY_SOURCE)
-      # aws-lc-sys emits this GCC preprocessor forwarding form in debug
-      # builds, but zig cc expects the define flag directly.
       args+=("-U_FORTIFY_SOURCE")
       continue
       ;;
   esac
-  args+=("\${arg}")
+  args+=("${arg}")
 done
 
-# Zig enables UBSan for debug C builds by default. Rust links these objects
-# without Zig's sanitizer runtime, so keep native dependencies uninstrumented.
-exec "${zig_bin}" cc -target "${zig_target}" "\${args[@]}" -fno-sanitize=undefined
+exec "${zig_bin}" cc -target "${zig_target}" "${args[@]}" -fno-sanitize=undefined
 EOF
+
   cat >"${cxx}" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
@@ -161,31 +181,28 @@ set -euo pipefail
 args=()
 skip_next=0
 pending_include=0
-for arg in "\$@"; do
-  if [[ "\${pending_include}" -eq 1 ]]; then
+for arg in "$@"; do
+  if [[ "${pending_include}" -eq 1 ]]; then
     pending_include=0
-    if [[ "\${arg}" == /usr/include || "\${arg}" == /usr/include/* ]]; then
-      # Keep host-only headers available, but after the target sysroot headers.
-      args+=("-idirafter" "\${arg}")
+    if [[ "${arg}" == /usr/include || "${arg}" == /usr/include/* ]]; then
+      args+=("-idirafter" "${arg}")
     else
-      args+=("-I" "\${arg}")
+      args+=("-I" "${arg}")
     fi
     continue
   fi
 
-  if [[ "\${skip_next}" -eq 1 ]]; then
+  if [[ "${skip_next}" -eq 1 ]]; then
     skip_next=0
     continue
   fi
-  case "\${arg}" in
+  case "${arg}" in
     --target)
-      # Drop explicit --target and its value: we always pass zig's -target below.
       skip_next=1
       continue
       ;;
     --target=*|-target=*|-target)
-      # Zig expects -target and rejects Rust triples like *-unknown-linux-musl.
-      if [[ "\${arg}" == "-target" ]]; then
+      if [[ "${arg}" == "-target" ]]; then
         skip_next=1
       fi
       continue
@@ -195,27 +212,22 @@ for arg in "\$@"; do
       continue
       ;;
     -I/usr/include|-I/usr/include/*)
-      # Avoid making glibc headers win over musl headers.
-      args+=("-idirafter" "\${arg#-I}")
+      args+=("-idirafter" "${arg#-I}")
       continue
       ;;
     -Wp,-U_FORTIFY_SOURCE)
-      # aws-lc-sys emits this GCC forwarding form in debug builds; zig c++
-      # expects the define flag directly.
       args+=("-U_FORTIFY_SOURCE")
       continue
       ;;
   esac
-  args+=("\${arg}")
+  args+=("${arg}")
 done
 
-# Zig enables UBSan for debug C++ builds by default. Rust links these objects
-# without Zig's sanitizer runtime, so keep native dependencies uninstrumented.
-exec "${zig_bin}" c++ -target "${zig_target}" "\${args[@]}" -fno-sanitize=undefined
+exec "${zig_bin}" c++ -target "${zig_target}" "${args[@]}" -fno-sanitize=undefined
 EOF
-  chmod +x "${cc}" "${cxx}"
 
-  sysroot="$("${zig_bin}" cc -target "${zig_target}" -print-sysroot 2>/dev/null || true)"
+  chmod +x "${cc}" "${cxx}"
+  sysroot="$( "${zig_bin}" cc -target "${zig_target}" -print-sysroot 2>/dev/null || true)"
 else
   cc="${musl_linker}"
 
@@ -238,51 +250,47 @@ fi
 cflags="-pthread"
 cxxflags="-pthread"
 if [[ "${TARGET}" == "aarch64-unknown-linux-musl" ]]; then
-  # BoringSSL enables -Wframe-larger-than=25344 under clang and treats warnings as errors.
   cflags="${cflags} -Wno-error=frame-larger-than"
   cxxflags="${cxxflags} -Wno-error=frame-larger-than"
 fi
 
 echo "CFLAGS=${cflags}" >> "$GITHUB_ENV"
 echo "CXXFLAGS=${cxxflags}" >> "$GITHUB_ENV"
-echo "CC=${cc}" >> "$GITHUB_ENV"
+echo "CC=gcc" >> "$GITHUB_ENV"
 echo "TARGET_CC=${cc}" >> "$GITHUB_ENV"
-target_cc_var="CC_${TARGET}"
+target_cc_var="CC_${TARGET^^}"
 target_cc_var="${target_cc_var//-/_}"
 echo "${target_cc_var}=${cc}" >> "$GITHUB_ENV"
-echo "CXX=${cxx}" >> "$GITHUB_ENV"
+echo "CXX=g++" >> "$GITHUB_ENV"
 echo "TARGET_CXX=${cxx}" >> "$GITHUB_ENV"
-target_cxx_var="CXX_${TARGET}"
+target_cxx_var="CXX_${TARGET^^}"
 target_cxx_var="${target_cxx_var//-/_}"
 echo "${target_cxx_var}=${cxx}" >> "$GITHUB_ENV"
 
 cargo_linker_var="CARGO_TARGET_${TARGET^^}_LINKER"
 cargo_linker_var="${cargo_linker_var//-/_}"
-echo "${cargo_linker_var}=${musl_linker}" >> "$GITHUB_ENV"
+echo "${cargo_linker_var}=${cc}" >> "$GITHUB_ENV"
 
-echo "CMAKE_C_COMPILER=${cc}" >> "$GITHUB_ENV"
-echo "CMAKE_CXX_COMPILER=${cxx}" >> "$GITHUB_ENV"
+echo "CMAKE_C_COMPILER=gcc" >> "$GITHUB_ENV"
+echo "CMAKE_CXX_COMPILER=g++" >> "$GITHUB_ENV"
 echo "CMAKE_ARGS=-DCMAKE_HAVE_THREADS_LIBRARY=1 -DCMAKE_USE_PTHREADS_INIT=1 -DCMAKE_THREAD_LIBS_INIT=-pthread -DTHREADS_PREFER_PTHREAD_FLAG=ON" >> "$GITHUB_ENV"
 
-# Allow pkg-config resolution during cross-compilation.
 echo "PKG_CONFIG_ALLOW_CROSS=1" >> "$GITHUB_ENV"
 pkg_config_path="${libcap_pkgconfig_dir}"
 if [[ -n "${PKG_CONFIG_PATH:-}" ]]; then
   pkg_config_path="${pkg_config_path}:${PKG_CONFIG_PATH}"
 fi
 echo "PKG_CONFIG_PATH=${pkg_config_path}" >> "$GITHUB_ENV"
-pkg_config_path_var="PKG_CONFIG_PATH_${TARGET}"
+pkg_config_path_var="PKG_CONFIG_PATH_${TARGET^^}"
 pkg_config_path_var="${pkg_config_path_var//-/_}"
 echo "${pkg_config_path_var}=${libcap_pkgconfig_dir}" >> "$GITHUB_ENV"
-pkg_config_libdir_var="PKG_CONFIG_LIBDIR_${TARGET}"
+pkg_config_libdir_var="PKG_CONFIG_LIBDIR_${TARGET^^}"
 pkg_config_libdir_var="${pkg_config_libdir_var//-/_}"
-# Do not let musl cross-builds resolve native libraries from the host glibc
-# pkg-config directories. libcap is the only target package provided here.
 echo "${pkg_config_libdir_var}=${libcap_pkgconfig_dir}" >> "$GITHUB_ENV"
 
 if [[ -n "${sysroot}" && "${sysroot}" != "/" ]]; then
   echo "PKG_CONFIG_SYSROOT_DIR=${sysroot}" >> "$GITHUB_ENV"
-  pkg_config_sysroot_var="PKG_CONFIG_SYSROOT_DIR_${TARGET}"
+  pkg_config_sysroot_var="PKG_CONFIG_SYSROOT_DIR_${TARGET^^}"
   pkg_config_sysroot_var="${pkg_config_sysroot_var//-/_}"
   echo "${pkg_config_sysroot_var}=${sysroot}" >> "$GITHUB_ENV"
 fi
