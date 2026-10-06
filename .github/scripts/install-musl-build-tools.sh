@@ -245,12 +245,12 @@ fi
 
 echo "CFLAGS=${cflags}" >> "$GITHUB_ENV"
 echo "CXXFLAGS=${cxxflags}" >> "$GITHUB_ENV"
-echo "CC=${cc}" >> "$GITHUB_ENV"
+echo "CC=gcc" >> "$GITHUB_ENV"
 echo "TARGET_CC=${cc}" >> "$GITHUB_ENV"
 target_cc_var="CC_${TARGET}"
 target_cc_var="${target_cc_var//-/_}"
 echo "${target_cc_var}=${cc}" >> "$GITHUB_ENV"
-echo "CXX=${cxx}" >> "$GITHUB_ENV"
+echo "CXX=g++" >> "$GITHUB_ENV"
 echo "TARGET_CXX=${cxx}" >> "$GITHUB_ENV"
 target_cxx_var="CXX_${TARGET}"
 target_cxx_var="${target_cxx_var//-/_}"
@@ -260,8 +260,10 @@ cargo_linker_var="CARGO_TARGET_${TARGET^^}_LINKER"
 cargo_linker_var="${cargo_linker_var//-/_}"
 echo "${cargo_linker_var}=${cc}" >> "$GITHUB_ENV"
 
-echo "CMAKE_C_COMPILER=${cc}" >> "$GITHUB_ENV"
-echo "CMAKE_CXX_COMPILER=${cxx}" >> "$GITHUB_ENV"
+echo "CMAKE_C_COMPILER=gcc" >> "$GITHUB_ENV"
+echo "CMAKE_CXX_COMPILER=g++" >> "$GITHUB_ENV"
+echo "CMAKE_C_COMPILER_${TARGET}=${cc}" >> "$GITHUB_ENV"
+echo "CMAKE_CXX_COMPILER_${TARGET}=${cxx}" >> "$GITHUB_ENV"
 echo "CMAKE_ARGS=-DCMAKE_HAVE_THREADS_LIBRARY=1 -DCMAKE_USE_PTHREADS_INIT=1 -DCMAKE_THREAD_LIBS_INIT=-pthread -DTHREADS_PREFER_PTHREAD_FLAG=ON" >> "$GITHUB_ENV"
 
 # Allow pkg-config resolution during cross-compilation.
