@@ -16,7 +16,7 @@ jobs:
           ref: flatten-mcp-tools-for-non-namespace-providers
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.95.0
         with:
           targets: aarch64-unknown-linux-musl
 
