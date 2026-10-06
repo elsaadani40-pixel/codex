@@ -93,14 +93,26 @@ if [[ ! -f "${libcap_prefix}/lib/libcap.a" ]]; then
 
   tar -xJf "${libcap_tarball}" -C "${libcap_src_root}"
   libcap_source_dir="${libcap_src_root}/libcap-${libcap_version}"
-  # libcap has a small build-time generator (_makenames) that must run
-  # on the CI host. Keep the library objects ARM64/musl, but compile that
-  # generator with the native host compiler so it can execute on x86_64.
-  make -C "${libcap_source_dir}/libcap" -j"$(nproc)" \
+
+  # Codex only consumes the static libcap archive below. Do NOT build the
+  # shared-library target: libcap's shared build invokes host-only objcopy
+  # logic on the cross-compiled AArch64 ELF and is unnecessary for this job.
+  #
+  # _makenames is a build-time generator and must execute on the x86_64 CI
+  # host, while the library itself must be compiled for the target.
+  make -C "${libcap_source_dir}/libcap" -j"$(nproc)" libcap.a \
     CC="${musl_linker}" \
     BUILD_CC=gcc \
     AR=ar \
     RANLIB=ranlib
+
+  # Hard fail if the produced archive is not actually AArch64.
+  ar t "${libcap_source_dir}/libcap/libcap.a" | grep -q '^cap_alloc.o$'
+  file "${libcap_source_dir}/libcap/libcap.a"
+  objdump -f "${libcap_source_dir}/libcap/cap_alloc.o" | grep -Eq 'aarch64|AArch64|ARM aarch64' || {
+    echo "libcap archive object is not AArch64" >&2
+    exit 1
+  }
 
   cp "${libcap_source_dir}/libcap/libcap.a" "${libcap_prefix}/lib/libcap.a"
   cp "${libcap_source_dir}/libcap/include/uapi/linux/capability.h" "${libcap_prefix}/include/linux/capability.h"
