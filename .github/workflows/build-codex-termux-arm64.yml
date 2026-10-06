@@ -1,0 +1,38 @@
+name: build-codex-termux-arm64
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout patch branch
+        uses: actions/checkout@v4
+        with:
+          ref: flatten-mcp-tools-for-non-namespace-providers
+
+      - name: Install Rust target
+        run: rustup target add aarch64-unknown-linux-musl
+
+      - name: Install musl linker
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Build Codex CLI
+        run: cargo build --release -p codex-cli --target aarch64-unknown-linux-musl
+
+      - name: Package binary
+        run: |
+          mkdir -p dist
+          cp target/aarch64-unknown-linux-musl/release/codex dist/codex
+          tar -czf dist/codex-termux-arm64.tar.gz -C dist codex
+          sha256sum dist/codex dist/codex-termux-arm64.tar.gz > dist/SHA256SUMS
+
+      - name: Upload ARM64 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: codex-termux-arm64
+          path: dist/
