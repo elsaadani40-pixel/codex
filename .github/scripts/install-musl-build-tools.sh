@@ -262,8 +262,7 @@ echo "${cargo_linker_var}=${cc}" >> "$GITHUB_ENV"
 
 echo "CMAKE_C_COMPILER=gcc" >> "$GITHUB_ENV"
 echo "CMAKE_CXX_COMPILER=g++" >> "$GITHUB_ENV"
-echo "CMAKE_C_COMPILER_${TARGET}=${cc}" >> "$GITHUB_ENV"
-echo "CMAKE_CXX_COMPILER_${TARGET}=${cxx}" >> "$GITHUB_ENV"
+# Never export the ARM64 compiler as a global CC/CXX/CMake default.
 echo "CMAKE_ARGS=-DCMAKE_HAVE_THREADS_LIBRARY=1 -DCMAKE_USE_PTHREADS_INIT=1 -DCMAKE_THREAD_LIBS_INIT=-pthread -DTHREADS_PREFER_PTHREAD_FLAG=ON" >> "$GITHUB_ENV"
 
 # Allow pkg-config resolution during cross-compilation.
