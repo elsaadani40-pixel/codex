@@ -30,67 +30,39 @@ jobs:
         with:
           targets: aarch64-unknown-linux-musl
 
-      - name: Install AArch64 musl build tools
+      - name: Install Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.14.0
+          use-cache: false
+
+      - name: Install musl build tools
+        env:
+          TARGET: aarch64-unknown-linux-musl
         run: |
           set -euo pipefail
-
-          sudo apt-get update
-
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            --no-install-recommends \
-            musl-tools \
-            gcc-aarch64-linux-gnu \
-            ca-certificates \
-            curl
-
-      - name: Configure AArch64 musl compiler
-        run: |
-          set -euo pipefail
-
-          sudo ln -sf \
-            "$(command -v aarch64-linux-gnu-gcc)" \
-            /usr/local/bin/aarch64-linux-musl-gcc
-
-          command -v aarch64-linux-musl-gcc
-
-          aarch64-linux-musl-gcc --version
-
-      - name: Configure Cargo linker
-        run: |
-          set -euo pipefail
-
-          mkdir -p .cargo
-
-          cat > .cargo/config.toml <<'EOF'
-          [target.aarch64-unknown-linux-musl]
-          linker = "aarch64-linux-musl-gcc"
-          EOF
-
-          cat .cargo/config.toml
+          bash "${GITHUB_WORKSPACE}/.github/scripts/install-musl-build-tools.sh"
 
       - name: Configure aws-lc for musl
         run: |
           set -euo pipefail
-
           echo "AWS_LC_SYS_NO_JITTER_ENTROPY=1" >> "$GITHUB_ENV"
+          target_no_jitter="AWS_LC_SYS_NO_JITTER_ENTROPY_aarch64-unknown-linux-musl"
+          target_no_jitter="${target_no_jitter//-/_}"
+          echo "${target_no_jitter}=1" >> "$GITHUB_ENV"
 
-          echo \
-            "AWS_LC_SYS_NO_JITTER_ENTROPY_AARCH64_UNKNOWN_LINUX_MUSL=1" \
-            >> "$GITHUB_ENV"
-
-      - name: Verify Rust target
+      - name: Verify toolchain
         run: |
           set -euo pipefail
-
           rustc --version
           cargo --version
-
-          echo "Installed Rust targets:"
           rustup target list --installed
-
-          echo "Rust target library:"
-          rustc --print target-libdir \
-            --target aarch64-unknown-linux-musl
+          zig version
+          command -v "$CC"
+          "$CC" --version
+          command -v "$CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER"
+          "$CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER" --version
+          rustc --print target-libdir --target aarch64-unknown-linux-musl
 
       - name: Configure Rusty V8 artifact
         uses: ./.github/actions/setup-rusty-v8
@@ -100,79 +72,35 @@ jobs:
       - name: Verify Rusty V8 environment
         run: |
           set -euo pipefail
-
           test -s "$RUSTY_V8_ARCHIVE"
           test -s "$RUSTY_V8_SRC_BINDING_PATH"
-
-          echo "Rusty V8 archive:"
-          echo "$RUSTY_V8_ARCHIVE"
-
-          echo "Rusty V8 binding:"
-          echo "$RUSTY_V8_SRC_BINDING_PATH"
-
-          echo "Files:"
-          ls -lh \
-            "$RUSTY_V8_ARCHIVE" \
-            "$RUSTY_V8_SRC_BINDING_PATH"
+          ls -lh "$RUSTY_V8_ARCHIVE" "$RUSTY_V8_SRC_BINDING_PATH"
 
       - name: Build Codex CLI
         working-directory: codex-rs
-        env:
-          CC_aarch64_unknown_linux_musl: aarch64-linux-musl-gcc
-          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: aarch64-linux-musl-gcc
         run: |
           set -euo pipefail
-
-          cargo build \
-            --locked \
-            --release \
-            -p codex-cli \
-            --bin codex \
-            --target aarch64-unknown-linux-musl
+          cargo build --locked --release -p codex-cli --bin codex --target aarch64-unknown-linux-musl
 
       - name: Verify ARM64 binary
         run: |
           set -euo pipefail
-
           BINARY="codex-rs/target/aarch64-unknown-linux-musl/release/codex"
-
           test -x "$BINARY"
-
-          echo "Binary:"
           file "$BINARY"
-
-          echo "Size:"
           ls -lh "$BINARY"
 
       - name: Package Termux ARM64 binary
         run: |
           set -euo pipefail
-
           BINARY="codex-rs/target/aarch64-unknown-linux-musl/release/codex"
-
           rm -rf dist
           mkdir -p dist
-
           cp "$BINARY" dist/codex
-
           chmod 0755 dist/codex
-
-          tar \
-            -C dist \
-            -czf dist/codex-termux-arm64.tar.gz \
-            codex
-
-          sha256sum \
-            dist/codex \
-            dist/codex-termux-arm64.tar.gz \
-            > dist/SHA256SUMS
-
-          echo
-          echo "SHA256:"
+          tar -C dist -czf dist/codex-termux-arm64.tar.gz codex
+          sha256sum dist/codex dist/codex-termux-arm64.tar.gz > dist/SHA256SUMS
           cat dist/SHA256SUMS
-
-          echo
-          echo "Artifacts:"
           ls -lh dist/
 
       - name: Upload ARM64 artifact
