@@ -339,13 +339,20 @@ echo "AWS_LC_SYS_TARGET_CFLAGS=${target_cflags}" >> "$GITHUB_ENV"
 echo "AWS_LC_SYS_TARGET_CXXFLAGS=${target_cxxflags}" >> "$GITHUB_ENV"
 
 # Target compilers: used only for the target triple.
-target_cc_var="CC_${TARGET^^}"
-target_cc_var="${target_cc_var//-/_}"
+# cc-rs uses the literal lowercase Rust target in target-scoped
+# environment variables (for example CC_aarch64_unknown_linux_musl).
+# Keep these separate from Cargo's uppercase linker variable namespace.
+target_cc_var="CC_${TARGET//-/_}"
 echo "${target_cc_var}=${cc}" >> "$GITHUB_ENV"
-
-target_cxx_var="CXX_${TARGET^^}"
-target_cxx_var="${target_cxx_var//-/_}"
+target_cxx_var="CXX_${TARGET//-/_}"
 echo "${target_cxx_var}=${cxx}" >> "$GITHUB_ENV"
+target_cflags_var="CFLAGS_${TARGET//-/_}"
+echo "${target_cflags_var}=${target_cflags}" >> "$GITHUB_ENV"
+target_cxxflags_var="CXXFLAGS_${TARGET//-/_}"
+echo "${target_cxxflags_var}=${target_cxxflags}" >> "$GITHUB_ENV"
+
+# Preserve the uppercase aliases too for tools that normalize Cargo target
+# triples in environment variable names.
 
 cargo_linker_var="CARGO_TARGET_${TARGET^^}_LINKER"
 cargo_linker_var="${cargo_linker_var//-/_}"
