@@ -22,12 +22,13 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y musl-tools
 
       - name: Build Codex CLI
+        working-directory: codex-rs
         run: cargo build --release -p codex-cli --target aarch64-unknown-linux-musl
 
       - name: Package binary
         run: |
           mkdir -p dist
-          cp target/aarch64-unknown-linux-musl/release/codex dist/codex
+          cp codex-rs/target/aarch64-unknown-linux-musl/release/codex dist/codex
           tar -czf dist/codex-termux-arm64.tar.gz -C dist codex
           sha256sum dist/codex dist/codex-termux-arm64.tar.gz > dist/SHA256SUMS
 
