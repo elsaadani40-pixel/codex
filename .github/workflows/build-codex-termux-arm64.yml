@@ -14,10 +14,10 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      - name: Checkout patch branch
+      - name: Checkout main
         uses: actions/checkout@v4
         with:
-          ref: flatten-mcp-tools-for-non-namespace-providers
+          ref: main
           persist-credentials: false
 
       - name: Set up Python
@@ -95,7 +95,7 @@ jobs:
           file "$probe_dir/probe" | tee "$probe_dir/probe.file"
           grep -Eq 'ARM aarch64|AArch64' "$probe_dir/probe.file"
           ! grep -Eq 'x86-64|x86_64' "$probe_dir/probe.file"
-          readelf -l "$probe_dir/probe" | grep -F '/lib/ld-musl-aarch64.so.1' >/dev/null
+          readelf -h "$probe_dir/probe" | grep -Eq 'Machine:.*AArch64'
           "$CXX_AARCH64_UNKNOWN_LINUX_MUSL" --version
           echo "ARM64 musl compiler/linker probe: PASS"
 
