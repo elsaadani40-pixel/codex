@@ -51,17 +51,40 @@ jobs:
           target_no_jitter="${target_no_jitter//-/_}"
           echo "${target_no_jitter}=1" >> "$GITHUB_ENV"
 
-      - name: Verify toolchain
+      - name: Verify isolated host and ARM64 toolchains
         run: |
           set -euo pipefail
           rustc --version
           cargo --version
           rustup target list --installed
           zig version
+
+          echo "HOST CC=$CC"
           command -v "$CC"
           "$CC" --version
+
+          echo "HOST CXX=$CXX"
+          command -v "$CXX"
+          "$CXX" --version
+
+          echo "TARGET CC=$CC_AARCH64_UNKNOWN_LINUX_MUSL"
+          command -v "$CC_AARCH64_UNKNOWN_LINUX_MUSL"
+          "$CC_AARCH64_UNKNOWN_LINUX_MUSL" -dumpmachine || true
+
+          echo "TARGET CXX=$CXX_AARCH64_UNKNOWN_LINUX_MUSL"
+          command -v "$CXX_AARCH64_UNKNOWN_LINUX_MUSL"
+          "$CXX_AARCH64_UNKNOWN_LINUX_MUSL" -dumpmachine || true
+
+          echo "TARGET LINKER=$CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER"
           command -v "$CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER"
           "$CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER" --version
+
+          test "$CC" = "gcc"
+          test "$CXX" = "g++"
+          test -n "$CC_AARCH64_UNKNOWN_LINUX_MUSL"
+          test -n "$CXX_AARCH64_UNKNOWN_LINUX_MUSL"
+          test "$CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER" = "$CC_AARCH64_UNKNOWN_LINUX_MUSL"
+
           rustc --print target-libdir --target aarch64-unknown-linux-musl
 
       - name: Configure Rusty V8 artifact
